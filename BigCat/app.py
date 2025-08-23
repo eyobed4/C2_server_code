@@ -1,7 +1,8 @@
+i told you i am using render shoud i pest this 
+import os
 from flask import Flask, render_template, request, redirect, url_for
 
 app = Flask(__name__)
-
 
 @app.route('/')
 def welcome():
@@ -20,5 +21,5 @@ def connections():
     return render_template('connections.html')
 
 if __name__ == "__main__":
-    app.run(host="192.168.1.5", port=5000, debug=True)
-
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
